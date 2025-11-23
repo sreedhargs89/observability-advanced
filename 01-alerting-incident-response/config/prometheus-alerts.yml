@@ -1,0 +1,234 @@
+groups:
+  - name: service_health
+    interval: 15s
+    rules:
+      # Service is down
+      - alert: ServiceDown
+        expr: up{job=~"api-gateway|user-service|order-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "{{ $labels.job }} on {{ $labels.instance }} has been down for more than 1 minute."
+          runbook: "https://runbooks.example.com/service-down"
+          dashboard: "http://localhost:3000/d/services"
+          
+      # High error rate
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5.."}[5m])) by (service)
+            /
+            sum(rate(http_requests_total[5m])) by (service)
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "High error rate on {{ $labels.service }}"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+          runbook: "https://runbooks.example.com/high-error-rate"
+          dashboard: "http://localhost:3000/d/services"
+          
+      # Elevated error rate (warning)
+      - alert: ElevatedErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5.."}[5m])) by (service)
+            /
+            sum(rate(http_requests_total[5m])) by (service)
+          ) > 0.01
+        for: 10m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Elevated error rate on {{ $labels.service }}"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 1%)"
+          runbook: "https://runbooks.example.com/elevated-error-rate"
+          
+  - name: performance
+    interval: 15s
+    rules:
+      # High latency (P95)
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le, service)
+          ) > 1.0
+        for: 10m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "High latency on {{ $labels.service }}"
+          description: "P95 latency is {{ $value }}s (threshold: 1s)"
+          runbook: "https://runbooks.example.com/high-latency"
+          dashboard: "http://localhost:3000/d/services"
+          
+      # Critical latency (P95)
+      - alert: CriticalLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le, service)
+          ) > 5.0
+        for: 5m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "Critical latency on {{ $labels.service }}"
+          description: "P95 latency is {{ $value }}s (threshold: 5s)"
+          runbook: "https://runbooks.example.com/critical-latency"
+          
+      # High request rate (potential DDoS)
+      - alert: HighRequestRate
+        expr: |
+          sum(rate(http_requests_total[1m])) by (service) > 1000
+        for: 2m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Unusually high request rate on {{ $labels.service }}"
+          description: "Request rate is {{ $value }} req/s (normal: <1000)"
+          runbook: "https://runbooks.example.com/high-request-rate"
+          
+  - name: resource_usage
+    interval: 30s
+    rules:
+      # High CPU usage
+      - alert: HighCPUUsage
+        expr: |
+          100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 10m
+        labels:
+          severity: warning
+          team: infrastructure
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is {{ $value | humanize }}% (threshold: 80%)"
+          runbook: "https://runbooks.example.com/high-cpu"
+          
+      # Critical CPU usage
+      - alert: CriticalCPUUsage
+        expr: |
+          100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 95
+        for: 5m
+        labels:
+          severity: critical
+          team: infrastructure
+        annotations:
+          summary: "Critical CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is {{ $value | humanize }}% (threshold: 95%)"
+          runbook: "https://runbooks.example.com/critical-cpu"
+          
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 80
+        for: 10m
+        labels:
+          severity: warning
+          team: infrastructure
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage is {{ $value | humanize }}% (threshold: 80%)"
+          runbook: "https://runbooks.example.com/high-memory"
+          
+  - name: database
+    interval: 30s
+    rules:
+      # Slow database queries
+      - alert: SlowDatabaseQueries
+        expr: |
+          rate(database_query_duration_seconds_sum[5m])
+          /
+          rate(database_query_duration_seconds_count[5m]) > 1.0
+        for: 10m
+        labels:
+          severity: warning
+          team: database
+        annotations:
+          summary: "Slow database queries detected"
+          description: "Average query time is {{ $value }}s (threshold: 1s)"
+          runbook: "https://runbooks.example.com/slow-queries"
+          
+      # Database connection pool exhausted
+      - alert: DatabaseConnectionPoolExhausted
+        expr: |
+          database_connections_active / database_connections_max > 0.9
+        for: 5m
+        labels:
+          severity: critical
+          team: database
+        annotations:
+          summary: "Database connection pool nearly exhausted"
+          description: "{{ $value | humanizePercentage }} of connections in use (threshold: 90%)"
+          runbook: "https://runbooks.example.com/connection-pool"
+          
+  - name: business_metrics
+    interval: 1m
+    rules:
+      # Order processing failure rate
+      - alert: HighOrderFailureRate
+        expr: |
+          (
+            sum(rate(orders_total{status="failed"}[5m]))
+            /
+            sum(rate(orders_total[5m]))
+          ) > 0.10
+        for: 5m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "High order failure rate"
+          description: "{{ $value | humanizePercentage }} of orders are failing (threshold: 10%)"
+          runbook: "https://runbooks.example.com/order-failures"
+          dashboard: "http://localhost:3000/d/business"
+          
+      # Payment gateway timeout
+      - alert: PaymentGatewayTimeout
+        expr: |
+          sum(rate(payment_errors_total{error="timeout"}[5m])) > 10
+        for: 2m
+        labels:
+          severity: critical
+          team: payments
+        annotations:
+          summary: "Payment gateway timeouts detected"
+          description: "{{ $value }} payment timeouts per second"
+          runbook: "https://runbooks.example.com/payment-timeout"
+          
+  - name: security
+    interval: 1m
+    rules:
+      # Multiple failed login attempts
+      - alert: SecurityMultipleFailedLogins
+        expr: |
+          sum(rate(login_attempts_total{status="failed"}[5m])) by (user_id) > 5
+        for: 1m
+        labels:
+          severity: critical
+          team: security
+        annotations:
+          summary: "Multiple failed login attempts for user {{ $labels.user_id }}"
+          description: "{{ $value }} failed login attempts per second"
+          runbook: "https://runbooks.example.com/failed-logins"
+          
+      # Unusual API access pattern
+      - alert: SecurityUnusualAPIAccess
+        expr: |
+          sum(rate(http_requests_total[5m])) by (api_key) > 100
+        for: 5m
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "Unusual API access pattern detected"
+          description: "API key {{ $labels.api_key }} making {{ $value }} req/s (normal: <100)"
+          runbook: "https://runbooks.example.com/unusual-access"

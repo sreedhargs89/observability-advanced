@@ -1,0 +1,153 @@
+global:
+  # Global configuration
+  resolve_timeout: 5m
+  slack_api_url: '${SLACK_WEBHOOK_URL}'
+  
+# Templates for notifications
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# Route tree for alert distribution
+route:
+  # Default receiver for all alerts
+  receiver: 'default'
+  
+  # Group alerts by these labels
+  group_by: ['alertname', 'cluster', 'service']
+  
+  # Wait time before sending initial notification
+  group_wait: 10s
+  
+  # Wait time before sending notification about new alerts in group
+  group_interval: 10s
+  
+  # Wait time before re-sending notification
+  repeat_interval: 12h
+  
+  # Child routes
+  routes:
+    # Critical alerts (P0/P1) - Page immediately
+    - match:
+        severity: critical
+      receiver: 'pagerduty-critical'
+      group_wait: 10s
+      repeat_interval: 5m
+      continue: true  # Also send to other receivers
+      
+    - match:
+        severity: critical
+      receiver: 'slack-critical'
+      
+    # High priority alerts (P2) - Slack notification
+    - match:
+        severity: warning
+      receiver: 'slack-warnings'
+      group_wait: 30s
+      repeat_interval: 4h
+      
+    # Database-specific alerts
+    - match:
+        team: database
+      receiver: 'slack-database'
+      group_by: ['alertname', 'instance']
+      
+    # Frontend-specific alerts
+    - match:
+        team: frontend
+      receiver: 'slack-frontend'
+      
+    # Security alerts - Always critical
+    - match_re:
+        alertname: '^Security.*'
+      receiver: 'pagerduty-security'
+      group_wait: 0s
+      repeat_interval: 5m
+
+# Inhibition rules - Suppress certain alerts when others are firing
+inhibit_rules:
+  # Suppress warnings if critical alert is firing for same service
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['service', 'instance']
+    
+  # Suppress individual service alerts if entire cluster is down
+  - source_match:
+      alertname: 'ClusterDown'
+    target_match_re:
+      alertname: '^Service.*'
+    equal: ['cluster']
+
+# Notification receivers
+receivers:
+  # Default receiver (fallback)
+  - name: 'default'
+    slack_configs:
+      - channel: '#alerts-default'
+        title: '{{ template "slack.default.title" . }}'
+        text: '{{ template "slack.default.text" . }}'
+        send_resolved: true
+        
+  # Critical alerts - PagerDuty
+  - name: 'pagerduty-critical'
+    pagerduty_configs:
+      - service_key: '${PAGERDUTY_SERVICE_KEY}'
+        description: '{{ template "pagerduty.default.description" . }}'
+        severity: '{{ .CommonLabels.severity }}'
+        details:
+          firing: '{{ template "pagerduty.default.instances" .Alerts.Firing }}'
+          resolved: '{{ template "pagerduty.default.instances" .Alerts.Resolved }}'
+          num_firing: '{{ .Alerts.Firing | len }}'
+          num_resolved: '{{ .Alerts.Resolved | len }}'
+        
+  # Critical alerts - Slack
+  - name: 'slack-critical'
+    slack_configs:
+      - channel: '#alerts-critical'
+        title: '🚨 CRITICAL: {{ template "slack.default.title" . }}'
+        text: '{{ template "slack.default.text" . }}'
+        color: 'danger'
+        send_resolved: true
+        actions:
+          - type: button
+            text: 'Runbook 📖'
+            url: '{{ (index .Alerts 0).Annotations.runbook }}'
+          - type: button
+            text: 'Silence 🔇'
+            url: '{{ template "slack.default.silenceURL" . }}'
+          - type: button
+            text: 'Dashboard 📊'
+            url: '{{ (index .Alerts 0).Annotations.dashboard }}'
+            
+  # Warning alerts - Slack
+  - name: 'slack-warnings'
+    slack_configs:
+      - channel: '#alerts-warnings'
+        title: '⚠️ WARNING: {{ template "slack.default.title" . }}'
+        text: '{{ template "slack.default.text" . }}'
+        color: 'warning'
+        send_resolved: true
+        
+  # Database team alerts
+  - name: 'slack-database'
+    slack_configs:
+      - channel: '#alerts-database'
+        title: '🗄️ DATABASE: {{ template "slack.default.title" . }}'
+        text: '{{ template "slack.default.text" . }}'
+        send_resolved: true
+        
+  # Frontend team alerts
+  - name: 'slack-frontend'
+    slack_configs:
+      - channel: '#alerts-frontend'
+        title: '🌐 FRONTEND: {{ template "slack.default.title" . }}'
+        text: '{{ template "slack.default.text" . }}'
+        send_resolved: true
+        
+  # Security alerts - PagerDuty
+  - name: 'pagerduty-security'
+    pagerduty_configs:
+      - service_key: '${PAGERDUTY_SECURITY_KEY}'
+        description: '🔒 SECURITY: {{ template "pagerduty.default.description" . }}'
+        severity: 'critical'

@@ -1,0 +1,32 @@
+{{ define "slack.default.title" }}
+[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .GroupLabels.SortedPairs.Values | join " " }}
+{{ end }}
+
+{{ define "slack.default.text" }}
+{{ range .Alerts }}
+*Alert:* {{ .Labels.alertname }}
+*Severity:* {{ .Labels.severity }}
+*Service:* {{ .Labels.service }}{{ if .Labels.instance }} ({{ .Labels.instance }}){{ end }}
+*Summary:* {{ .Annotations.summary }}
+*Description:* {{ .Annotations.description }}
+{{ if .Annotations.runbook }}*Runbook:* {{ .Annotations.runbook }}{{ end }}
+{{ if .Annotations.dashboard }}*Dashboard:* {{ .Annotations.dashboard }}{{ end }}
+*Started:* {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}
+{{ if .EndsAt }}*Ended:* {{ .EndsAt.Format "2006-01-02 15:04:05 MST" }}{{ end }}
+---
+{{ end }}
+{{ end }}
+
+{{ define "slack.default.silenceURL" }}
+{{ .ExternalURL }}/#/silences/new?filter=%7B
+{{- range .CommonLabels.SortedPairs -}}
+{{- if ne .Name "alertname" -}}
+{{- .Name }}%3D"{{- .Value -}}"%2C%20
+{{- end -}}
+{{- end -}}
+%7D
+{{ end }}
+
+{{ define "slack.default.titlelink" }}
+{{ .ExternalURL }}/#/alerts?receiver={{ .Receiver }}
+{{ end }}
