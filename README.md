@@ -1,7 +1,3 @@
-# Observability Tutorial: Learn by Doing
-
-Welcome! This tutorial will teach you **observability** from scratch through a hands-on example project. By the end, you'll understand the three pillars of observability and how to implement them in real applications.
-
 ## 📚 What You'll Learn
 
 - **What is Observability?** Understanding the difference between monitoring and observability
